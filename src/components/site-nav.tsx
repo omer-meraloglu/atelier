@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { signOut } from "@/app/login/actions";
 import { cn } from "@/lib/utils";
 
 const links = [
@@ -11,7 +12,13 @@ const links = [
   { href: "/history", label: "History" },
 ];
 
-export function SiteNav({ actions }: { actions?: React.ReactNode }) {
+export function SiteNav({
+  userEmail,
+  actions,
+}: {
+  userEmail?: string;
+  actions?: React.ReactNode;
+}) {
   const pathname = usePathname();
 
   return (
@@ -45,7 +52,27 @@ export function SiteNav({ actions }: { actions?: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="flex items-center gap-3">{actions}</div>
+        <div className="flex items-center gap-4">
+          {actions}
+          {userEmail && (
+            <>
+              <span
+                className="hidden max-w-40 truncate text-xs text-muted-foreground md:inline"
+                title={userEmail}
+              >
+                {userEmail}
+              </span>
+              <form action={signOut}>
+                <button
+                  type="submit"
+                  className="text-label text-muted-foreground transition-colors duration-300 hover:text-foreground"
+                >
+                  Sign out
+                </button>
+              </form>
+            </>
+          )}
+        </div>
       </div>
     </header>
   );
