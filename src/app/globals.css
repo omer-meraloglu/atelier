@@ -1,26 +1,172 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
+
+/* ————————————————————————————————————————————————
+   Atelier design tokens
+   Editorial, near-monochrome: bone ground, ink text,
+   one oxblood accent. Sharp corners, hairline rules,
+   slow confident motion.
+   ———————————————————————————————————————————————— */
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  --font-sans: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-serif), ui-serif, Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --font-heading: var(--font-serif), ui-serif, Georgia, serif;
+
+  --color-bone: var(--bone);
+  --color-ink: var(--ink);
+  --color-oxblood: var(--oxblood);
+  --color-hairline: var(--hairline);
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+
+  --radius-sm: 1px;
+  --radius-md: 2px;
+  --radius-lg: 2px;
+  --radius-xl: 3px;
+  --radius-2xl: 4px;
+  --radius-3xl: 6px;
+  --radius-4xl: 8px;
+
+  --ease-editorial: cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-reveal: reveal 0.9s var(--ease-editorial) both;
+
+  @keyframes reveal {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+:root {
+  /* palette */
+  --bone: #f2efe9;
+  --bone-raised: #f9f7f3;
+  --ink: #191712;
+  --ink-soft: #4c473f;
+  --ink-faint: #8a847a;
+  --oxblood: #6e2f28;
+  --hairline: rgb(25 23 18 / 0.14);
+  --hairline-faint: rgb(25 23 18 / 0.07);
+
+  /* semantic mapping (shadcn) */
+  --background: var(--bone);
+  --foreground: var(--ink);
+  --card: var(--bone-raised);
+  --card-foreground: var(--ink);
+  --popover: var(--bone-raised);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--bone);
+  --secondary: rgb(25 23 18 / 0.05);
+  --secondary-foreground: var(--ink);
+  --muted: rgb(25 23 18 / 0.05);
+  --muted-foreground: var(--ink-soft);
+  --accent: rgb(25 23 18 / 0.06);
+  --accent-foreground: var(--ink);
+  --destructive: var(--oxblood);
+  --border: var(--hairline);
+  --input: var(--hairline);
+  --ring: var(--ink);
+  --radius: 2px;
+  --sidebar: var(--bone-raised);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--ink);
+  --sidebar-primary-foreground: var(--bone);
+  --sidebar-accent: rgb(25 23 18 / 0.06);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--hairline);
+  --sidebar-ring: var(--ink);
+
+  /* motion */
+  --duration-fast: 200ms;
+  --duration-base: 450ms;
+  --duration-slow: 900ms;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "ss01", "cv05";
+  }
+
+  ::selection {
+    background: var(--ink);
+    color: var(--bone);
+  }
+
+  /* film-grain wash over the whole canvas — kept faint */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    pointer-events: none;
+    opacity: 0.3;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}
+
+@layer utilities {
+  /* display serif for headings & wordmark */
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  /* editorial micro-labels: small caps feel via tracking + uppercase */
+  .text-label {
+    @apply text-[0.6875rem] uppercase;
+    letter-spacing: 0.14em;
+  }
+
+  .hairline {
+    border-color: var(--hairline);
+  }
+
+  .hairline-faint {
+    border-color: var(--hairline-faint);
+  }
 }
