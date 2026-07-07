@@ -10,7 +10,7 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-export interface AssetRow {
+export type AssetRow = {
   id: string;
   user_id: string;
   kind: AssetKind;
@@ -22,7 +22,7 @@ export interface AssetRow {
   created_at: string;
 }
 
-export interface GenerationRow {
+export type GenerationRow = {
   id: string;
   user_id: string;
   model_asset_id: string;
@@ -36,7 +36,7 @@ export interface GenerationRow {
   created_at: string;
 }
 
-export interface VideoGenerationRow {
+export type VideoGenerationRow = {
   id: string;
   user_id: string;
   source_kind: VideoSourceKind;
@@ -53,7 +53,7 @@ export interface VideoGenerationRow {
   created_at: string;
 }
 
-export interface Database {
+export type Database = {
   public: {
     Tables: {
       assets: {
