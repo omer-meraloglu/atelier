@@ -76,7 +76,31 @@ const kolors: TryOnProvider = {
   },
 };
 
-export const tryOnProviders: TryOnProvider[] = [fashn, idmVton, kolors];
+/**
+ * Dev-only stub so the full generate lifecycle can run without a FAL_KEY.
+ * Enabled by ENABLE_MOCK_PROVIDER=1; the runner short-circuits on this id
+ * and echoes the model image back after a delay.
+ */
+const mockTryOn: TryOnProvider = {
+  id: "mock-tryon",
+  label: "Mock (dev only)",
+  falEndpoint: "mock",
+  note: "Local stub, echoes the model image · 3s",
+  buildInput(input: TryOnInput) {
+    return { model_image: input.modelImageUrl };
+  },
+  parseOutput(raw: unknown): TryOnResult {
+    const parsed = z.object({ url: z.string().url() }).parse(raw);
+    return { imageUrl: parsed.url, raw };
+  },
+};
+
+export const tryOnProviders: TryOnProvider[] = [
+  fashn,
+  idmVton,
+  kolors,
+  ...(process.env.ENABLE_MOCK_PROVIDER === "1" ? [mockTryOn] : []),
+];
 
 export function getTryOnProvider(id: string): TryOnProvider | undefined {
   return tryOnProviders.find((p) => p.id === id);
