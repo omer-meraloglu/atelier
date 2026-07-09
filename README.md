@@ -1,37 +1,80 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Atelier — AI Virtual Try-On Studio
 
-## Getting Started
+Upload a model, upload a garment, render the look with your choice of fal.ai
+try-on model — then set it in motion as a short clip. Every asset, render and
+clip lives in a private, per-user library.
 
-First, run the development server:
+**Stack**: Next.js 16 (App Router, Turbopack) · TypeScript strict · Tailwind 4
+· shadcn/ui (restyled) · Supabase (Postgres, Auth, Storage, RLS) · fal.ai ·
+Framer Motion · Zod.
+
+## Quick start
+
+Prereqs: Node 22+ (20 works, but supabase-js deprecates it), pnpm, Docker
+(for the local Supabase stack), the [Supabase CLI](https://supabase.com/docs/guides/cli).
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone <this repo> && cd atelier
+pnpm install
+
+# 1. Start the local Supabase stack (Postgres, Auth, Storage, mail catcher)
+supabase start          # prints local URL + keys
+supabase db reset       # applies migrations in supabase/migrations
+
+# 2. Environment
+cp .env.example .env.local
+#    - NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY:
+#      from `supabase status` (local) or your hosted project's API settings
+#    - SUPABASE_SERVICE_ROLE_KEY: same place (server-only)
+#    - FAL_KEY: from https://fal.ai/dashboard/keys (server-only)
+#    - ENABLE_MOCK_PROVIDER=1 to try the full flow without a FAL_KEY
+
+# 3. Run
+pnpm dev                # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Sign in with any email — locally, magic links land in Mailpit at
+<http://127.0.0.1:54324>. Upload a model photo and a garment photo in
+**Library**, combine them in **Studio**, compare providers, then **Animate**
+the result. Everything shows up in **History**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Hosted Supabase setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Create a project at [database.new](https://database.new).
+2. Push the schema: `supabase link --project-ref <ref> && supabase db push`.
+3. Auth → URL Configuration: set your site URL and add
+   `https://<your-domain>/**` to redirect URLs.
+4. Auth → Email Templates → Magic Link: use
+   `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`
+   as the link (a styled template is in `supabase/templates/magic_link.html`).
+   The `/auth/confirm` route also accepts the default template's PKCE `code`,
+   so this step is a nicety, not a requirement.
+5. (Optional) Auth → Providers: enable Google for OAuth sign-in.
 
-## Learn More
+## Deploying to Vercel
 
-To learn more about Next.js, take a look at the following resources:
+1. Import the repo, framework preset **Next.js**.
+2. Set the four env vars from `.env.example` (leave `ENABLE_MOCK_PROVIDER`
+   unset).
+3. Image renders run inside a server action with `maxDuration = 150` (set in
+   `src/app/studio/page.tsx`) — check your plan allows it; video always uses
+   fal's queue with polling, so no long-held requests.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Architecture notes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-# atelier
+- **Provider adapters**: `src/lib/providers/tryon.ts` and
+  `src/lib/providers/video.ts` each export a registry array; adding a fal
+  model is one entry implementing `buildInput`/`parseOutput`. The Studio and
+  Animate selectors render straight from these registries, and every render
+  logs `provider_model_id`, `latency_ms` and raw params for honest A/B
+  comparison.
+- **Security**: `FAL_KEY` and the service-role key never leave the server.
+  All three tables enforce RLS (`user_id = auth.uid()`); the `assets` bucket
+  is private with per-folder policies, and media is served via short-lived
+  signed URLs. Inputs are validated with Zod at every server boundary.
+  Uploads are capped at 10 MB (JPG/PNG/WebP); the bucket caps objects at
+  50 MB for clips.
+- **Lifecycle honesty**: generation rows always end `succeeded` or `failed`
+  with the error recorded; video jobs stuck >15 min are failed by the poller.
+- See `DECISIONS.md` for the running log of assumptions and trade-offs, and
+  `DESIGN.md` for the visual system (`/style` shows it live).

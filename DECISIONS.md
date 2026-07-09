@@ -61,3 +61,28 @@ A running log, newest last.
 - Neither wired video model exposes a true aspect-ratio or motion-strength
   parameter; motion level is mapped into the prompt text and the panel only
   shows controls a provider actually supports.
+
+## Generation pipelines
+
+- **Images render synchronously** inside a server action (the brief's flow):
+  row → `processing` → fal `subscribe` → result stored → terminal state. The
+  Studio page exports `maxDuration = 150` so Vercel keeps the action alive;
+  if a target plan caps below that, the image path should move to the same
+  queue+poll pattern video uses.
+- **Video renders via fal's queue**: `queue.submit` on start (requestId kept
+  in `params`), then the Animate panel polls a server action every 6s. The
+  poll tick downloads and stores the mp4 on completion, promotes
+  `queued → processing` honestly, and abandons jobs stuck past 15 minutes.
+  No HTTP request is ever held open for a render.
+- **Poster frames are captured in the browser** (canvas grab of frame one
+  after playback starts) and uploaded to the user's folder — serverless-safe,
+  no ffmpeg dependency. Clips without a poster fall back to their source
+  still in the grids.
+- **Rate guards**: 6 try-ons/minute; at most 2 video jobs in flight. Guards
+  live in the actions, backed by row counts — deliberate MVP simplicity.
+- **Mock providers** (`ENABLE_MOCK_PROVIDER=1`) let the entire lifecycle run
+  without spending fal credits: try-on echoes the model image after 3s; video
+  serves `dev/mock-clip.mp4` after 8s through the real queue/poll machinery.
+- **"Save to library" copies the render** into a new storage object and
+  registers it as a *model* asset — so a finished look can be layered with
+  the next garment. Copy (not reference) keeps deletes independent.

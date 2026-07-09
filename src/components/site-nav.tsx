@@ -65,7 +65,7 @@ export function SiteNav({
               <form action={signOut}>
                 <button
                   type="submit"
-                  className="text-label text-muted-foreground transition-colors duration-300 hover:text-foreground"
+                  className="text-label whitespace-nowrap text-muted-foreground transition-colors duration-300 hover:text-foreground"
                 >
                   Sign out
                 </button>
