@@ -69,7 +69,31 @@ const hailuo: VideoProvider = {
   },
 };
 
-export const videoProviders: VideoProvider[] = [klingStandard, hailuo];
+/**
+ * Dev-only stub mirroring the try-on mock: lets the whole queue/poll/store
+ * lifecycle run locally without a FAL_KEY. The runner short-circuits on
+ * falEndpoint === "mock" and serves a bundled sample clip.
+ */
+const mockVideo: VideoProvider = {
+  id: "mock-video",
+  label: "Mock (dev only)",
+  falEndpoint: "mock",
+  note: "Local stub, bundled sample clip · 8s",
+  supports: { duration: true, aspect: false, prompt: true, motion: true },
+  durationOptions: [5, 10],
+  buildInput(input: VideoInput) {
+    return { image_url: input.imageUrl };
+  },
+  parseOutput(raw: unknown): VideoResult {
+    return { videoUrl: "mock://clip", raw };
+  },
+};
+
+export const videoProviders: VideoProvider[] = [
+  klingStandard,
+  hailuo,
+  ...(process.env.ENABLE_MOCK_PROVIDER === "1" ? [mockVideo] : []),
+];
 
 export function getVideoProvider(id: string): VideoProvider | undefined {
   return videoProviders.find((p) => p.id === id);

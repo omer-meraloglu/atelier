@@ -16,6 +16,9 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { AssetWithUrl } from "@/components/library/asset-card";
 import type { TryOnProviderInfo } from "@/lib/providers/tryon";
+import type { VideoProviderInfo } from "@/lib/providers/video";
+import type { VideoStatus } from "@/app/studio/video-actions";
+import { AnimatePanel, type AnimateSource } from "./animate-panel";
 import { AssetSlot } from "./asset-slot";
 import { ResultStage, type StudioPhase } from "./result-stage";
 
@@ -33,17 +36,23 @@ export function StudioClient({
   models,
   products,
   providers,
+  videoProviders,
   initialModel,
   initialProduct,
   initialState,
+  initialAnimate,
+  initialVideoJob,
 }: {
   userId: string;
   models: AssetWithUrl[];
   products: AssetWithUrl[];
   providers: TryOnProviderInfo[];
+  videoProviders: VideoProviderInfo[];
   initialModel: AssetWithUrl | null;
   initialProduct: AssetWithUrl | null;
   initialState?: StudioPhase;
+  initialAnimate?: AnimateSource;
+  initialVideoJob?: VideoStatus;
 }) {
   const [model, setModel] = useState<AssetWithUrl | null>(initialModel);
   const [product, setProduct] = useState<AssetWithUrl | null>(initialProduct);
@@ -53,6 +62,10 @@ export function StudioClient({
     initialState ?? { phase: "idle" }
   );
   const [saving, startSaving] = useTransition();
+  const [animateSource, setAnimateSource] = useState<AnimateSource | null>(
+    initialAnimate ?? null
+  );
+  const [animateOpen, setAnimateOpen] = useState(Boolean(initialAnimate));
 
   const provider = providers.find((p) => p.id === providerId);
   const canGenerate =
@@ -188,8 +201,34 @@ export function StudioClient({
           }}
           onSave={handleSave}
           saving={saving}
+          onAnimate={
+            videoProviders.length > 0
+              ? (generationId) => {
+                  if (state.phase !== "done") return;
+                  setAnimateSource({
+                    kind: "generation",
+                    id: generationId,
+                    imageUrl: state.resultUrl,
+                    label:
+                      model && product
+                        ? `${model.label} × ${product.label}`
+                        : "this look",
+                  });
+                  setAnimateOpen(true);
+                }
+              : undefined
+          }
         />
       </div>
+
+      <AnimatePanel
+        open={animateOpen}
+        onOpenChange={setAnimateOpen}
+        source={animateSource}
+        providers={videoProviders}
+        userId={userId}
+        initialJob={initialVideoJob}
+      />
     </div>
   );
 }

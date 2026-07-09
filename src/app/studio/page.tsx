@@ -3,8 +3,11 @@ import type { Metadata } from "next";
 import { SiteNav } from "@/components/site-nav";
 import { StudioClient } from "@/components/studio/studio-client";
 import type { StudioPhase } from "@/components/studio/result-stage";
+import type { AnimateSource } from "@/components/studio/animate-panel";
+import type { VideoStatus } from "@/app/studio/video-actions";
 import { requireUser } from "@/lib/auth";
 import { listTryOnProviders } from "@/lib/providers/tryon";
+import { listVideoProviders } from "@/lib/providers/video";
 import { signPaths } from "@/lib/storage";
 
 export const metadata: Metadata = { title: "Studio" };
@@ -41,10 +44,87 @@ export default async function StudioPage({
     typeof params.product === "string" ? params.product : null;
   const generationParam =
     typeof params.generation === "string" ? params.generation : null;
+  const animateParam =
+    typeof params.animate === "string" ? params.animate : null;
+  const videoParam = typeof params.video === "string" ? params.video : null;
 
   let initialModel = models.find((a) => a.id === modelParam) ?? null;
   let initialProduct = products.find((a) => a.id === productParam) ?? null;
   let initialState: StudioPhase | undefined;
+  let initialAnimate: AnimateSource | undefined;
+  let initialVideoJob: VideoStatus | undefined;
+
+  // Animate a library asset directly (?animate=<assetId>).
+  if (animateParam) {
+    const asset = withUrls.find((a) => a.id === animateParam);
+    if (asset) {
+      initialAnimate = {
+        kind: "asset",
+        id: asset.id,
+        imageUrl: asset.url,
+        label: asset.label,
+      };
+    }
+  }
+
+  // Reopen a clip from History (?video=<id>).
+  if (videoParam) {
+    const { data: video } = await supabase
+      .from("video_generations")
+      .select("*")
+      .eq("id", videoParam)
+      .eq("user_id", user.id)
+      .single();
+
+    if (video) {
+      const paths = [video.result_path, video.poster_path].filter(
+        (p): p is string => Boolean(p)
+      );
+      const videoUrls = await signPaths(supabase, paths);
+      initialVideoJob = {
+        id: video.id,
+        status: video.status,
+        providerId: video.provider_model_id,
+        resultUrl: video.result_path
+          ? videoUrls.get(video.result_path)
+          : undefined,
+        posterUrl: video.poster_path
+          ? videoUrls.get(video.poster_path)
+          : undefined,
+        latencyMs: video.latency_ms ?? undefined,
+        error: video.error ?? undefined,
+      };
+
+      // Resolve its source still for the panel preview.
+      const sourceAsset = video.source_asset_id
+        ? withUrls.find((a) => a.id === video.source_asset_id)
+        : null;
+      if (sourceAsset) {
+        initialAnimate = {
+          kind: "asset",
+          id: sourceAsset.id,
+          imageUrl: sourceAsset.url,
+          label: sourceAsset.label,
+        };
+      } else if (video.source_generation_id) {
+        const { data: sourceGen } = await supabase
+          .from("generations")
+          .select("result_path")
+          .eq("id", video.source_generation_id)
+          .eq("user_id", user.id)
+          .single();
+        if (sourceGen?.result_path) {
+          const genUrls = await signPaths(supabase, [sourceGen.result_path]);
+          initialAnimate = {
+            kind: "generation",
+            id: video.source_generation_id,
+            imageUrl: genUrls.get(sourceGen.result_path) ?? null,
+            label: "a generated look",
+          };
+        }
+      }
+    }
+  }
 
   // Reopen a past render from History.
   if (generationParam) {
@@ -93,9 +173,12 @@ export default async function StudioPage({
           models={models}
           products={products}
           providers={listTryOnProviders()}
+          videoProviders={listVideoProviders()}
           initialModel={initialModel}
           initialProduct={initialProduct}
           initialState={initialState}
+          initialAnimate={initialAnimate}
+          initialVideoJob={initialVideoJob}
         />
       </main>
     </>
