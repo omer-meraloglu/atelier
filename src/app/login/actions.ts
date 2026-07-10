@@ -14,6 +14,11 @@ export type LoginState =
   | { status: "error"; message: string };
 
 async function siteOrigin() {
+  // Explicit override wins — set NEXT_PUBLIC_SITE_URL in production so
+  // auth emails always point at the canonical domain.
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL;
+  if (explicit) return explicit.replace(/\/+$/, "");
+
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "http";

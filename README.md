@@ -42,8 +42,11 @@ the result. Everything shows up in **History**.
 
 1. Create a project at [database.new](https://database.new).
 2. Push the schema: `supabase link --project-ref <ref> && supabase db push`.
-3. Auth → URL Configuration: set your site URL and add
-   `https://<your-domain>/**` to redirect URLs.
+3. Auth → URL Configuration: set **Site URL** to your production domain and
+   add `https://<your-domain>/**` **and** `http://localhost:3000/**` to
+   Redirect URLs. **If you skip this, magic-link emails point at
+   `localhost:3000`** — Supabase builds email links from Site URL and
+   rejects redirect targets that aren't allow-listed.
 4. Auth → Email Templates → Magic Link: use
    `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`
    as the link (a styled template is in `supabase/templates/magic_link.html`).
@@ -54,8 +57,9 @@ the result. Everything shows up in **History**.
 ## Deploying to Vercel
 
 1. Import the repo, framework preset **Next.js**.
-2. Set the four env vars from `.env.example` (leave `ENABLE_MOCK_PROVIDER`
-   unset).
+2. Set the env vars from `.env.example`, including
+   `NEXT_PUBLIC_SITE_URL=https://<your-domain>` so auth emails link to the
+   right origin (leave `ENABLE_MOCK_PROVIDER` unset).
 3. Image renders run inside a server action with `maxDuration = 150` (set in
    `src/app/studio/page.tsx`) — check your plan allows it; video always uses
    fal's queue with polling, so no long-held requests.
