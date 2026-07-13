@@ -10,6 +10,7 @@ export default async function LoginPage({
 }: PageProps<"/login">) {
   const params = await searchParams;
   const error = typeof params.error === "string" ? params.error : undefined;
+  const next = typeof params.next === "string" ? params.next : undefined;
 
   return (
     <main className="grid flex-1 lg:grid-cols-2">
@@ -38,13 +39,13 @@ export default async function LoginPage({
             Atelier
           </Link>
           <h1 className="font-display mt-10 text-3xl tracking-tight lg:mt-0">
-            Sign in
+            Welcome
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            No password. We&apos;ll email you a link.
+            Password, magic link, or Google — your studio, your way in.
           </p>
           <div className="mt-10">
-            <LoginForm serverError={error} />
+            <LoginForm serverError={error} next={next} />
           </div>
         </div>
       </div>

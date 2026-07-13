@@ -7,10 +7,13 @@ import { toast } from "sonner";
 
 import {
   attachPoster,
-  pollVideoGeneration,
   startVideoGeneration,
   type VideoStatus,
 } from "@/app/studio/video-actions";
+import {
+  VIDEO_JOBS_UPDATED_EVENT,
+  notifyVideoJobStarted,
+} from "@/components/video-jobs-watcher";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -41,7 +44,6 @@ export interface AnimateSource {
   label: string;
 }
 
-const POLL_INTERVAL_MS = 6_000;
 const MOTIONS = ["low", "medium", "high"] as const;
 type Motion = (typeof MOTIONS)[number];
 
@@ -66,6 +68,7 @@ export function AnimatePanel({
   providers,
   userId,
   initialJob,
+  videoAllowed = true,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -73,6 +76,7 @@ export function AnimatePanel({
   providers: VideoProviderInfo[];
   userId: string;
   initialJob?: VideoStatus;
+  videoAllowed?: boolean;
 }) {
   const [providerId, setProviderId] = useState(providers[0]?.id ?? "");
   const [prompt, setPrompt] = useState("");
@@ -92,19 +96,21 @@ export function AnimatePanel({
   const active =
     job !== null && (job.status === "queued" || job.status === "processing");
 
-  // Poll while a job is in flight.
+  // The persistent VideoJobsWatcher (in the site nav) is the single poller;
+  // this panel just listens for its broadcasts. Closing the panel or
+  // navigating no longer orphans a render.
   useEffect(() => {
-    if (!active || !job) return;
-    const t = setInterval(async () => {
-      const res = await pollVideoGeneration({ id: job.id });
-      if ("error" in res) {
-        toast.error(res.error);
-        return;
-      }
-      setJob(res);
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(t);
-  }, [active, job]);
+    const onUpdate = (event: Event) => {
+      const jobs = (event as CustomEvent<VideoStatus[]>).detail;
+      setJob((current) => {
+        if (!current) return current;
+        const updated = jobs.find((j) => j.id === current.id);
+        return updated ?? current;
+      });
+    };
+    window.addEventListener(VIDEO_JOBS_UPDATED_EVENT, onUpdate);
+    return () => window.removeEventListener(VIDEO_JOBS_UPDATED_EVENT, onUpdate);
+  }, []);
 
   async function start() {
     if (!source || !provider) return;
@@ -125,6 +131,7 @@ export function AnimatePanel({
       toast.error(res.error);
     } else {
       setJob(res);
+      notifyVideoJobStarted();
     }
   }
 
@@ -269,8 +276,24 @@ export function AnimatePanel({
             </div>
           )}
 
+          {/* Plan gate — the server refuses regardless; this is the kind version */}
+          {showConfig && !videoAllowed && (
+            <div className="space-y-4 border-t hairline pt-5">
+              <p className="font-display text-2xl tracking-tight">
+                Motion is a paid-plan feature
+              </p>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                Starter and Studio include video clips — twenty credits per
+                take, rendered by the same models the stills use.
+              </p>
+              <Button size="lg" className="w-full" asChild>
+                <a href="/pricing">See plans</a>
+              </Button>
+            </div>
+          )}
+
           {/* Config */}
-          {showConfig && (
+          {showConfig && videoAllowed && (
             <div className="space-y-5 border-t hairline pt-5">
               <div className="grid gap-2">
                 <Label htmlFor="video-provider">Video model</Label>

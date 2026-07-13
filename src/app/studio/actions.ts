@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireUser } from "@/lib/auth";
+import { refundSpentCredits, spendCredits } from "@/lib/billing/credits";
+import { CREDIT_COSTS } from "@/lib/billing/plans";
 import { getTryOnProvider } from "@/lib/providers/tryon";
 import { runTryOn } from "@/lib/run-tryon";
 import {
@@ -11,6 +13,7 @@ import {
   SIGNED_URL_TTL_PROVIDER,
   signPath,
 } from "@/lib/storage";
+import { stableSignedUrl } from "@/lib/signed-urls";
 
 const generateSchema = z.object({
   modelAssetId: z.string().uuid(),
@@ -26,6 +29,8 @@ export interface GenerateResult {
   latencyMs?: number;
   providerId: string;
   error?: string;
+  /** Machine-readable refusal reason for upgrade CTAs. */
+  code?: "no-credits";
 }
 
 /** Max renders a user may start per minute — a guard, not a quota system. */
@@ -119,14 +124,33 @@ export async function generateTryOn(
     };
   }
 
-  async function fail(message: string): Promise<GenerateResult> {
+  async function fail(
+    message: string,
+    code?: GenerateResult["code"]
+  ): Promise<GenerateResult> {
     await supabase
       .from("generations")
       .update({ status: "failed", error: message })
       .eq("id", row!.id)
       .eq("user_id", user.id);
+    // Compensate the debit if this render had already spent credits.
+    await refundSpentCredits(user.id, "image_render", row!.id);
     revalidatePath("/history");
-    return { id: row!.id, status: "failed", providerId, error: message };
+    return { id: row!.id, status: "failed", providerId, error: message, code };
+  }
+
+  // Meter before spending fal money; the definer function is atomic.
+  const paid = await spendCredits(
+    supabase,
+    CREDIT_COSTS.image,
+    "image_render",
+    row.id
+  );
+  if (!paid) {
+    return await fail(
+      "You're out of credits — upgrade or top up to keep rendering.",
+      "no-credits"
+    );
   }
 
   try {
@@ -163,7 +187,7 @@ export async function generateTryOn(
       .eq("id", row.id)
       .eq("user_id", user.id);
 
-    const resultUrl = await signPath(supabase, resultPath);
+    const resultUrl = await stableSignedUrl(resultPath);
     revalidatePath("/history");
 
     return {

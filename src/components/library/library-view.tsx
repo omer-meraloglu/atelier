@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useMemo, useState } from "react";
 
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { AssetKind } from "@/lib/database.types";
@@ -10,25 +9,30 @@ import { UploadZone, type PendingUpload } from "./upload-zone";
 
 export function LibraryView({
   assets,
-  kind,
+  initialKind,
   userId,
 }: {
   assets: AssetWithUrl[];
-  kind: AssetKind;
+  initialKind: AssetKind;
   userId: string;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  // Tab state lives client-side so switching is instant; the URL is kept
+  // in sync for deep links without a server round-trip.
+  const [kind, setKind] = useState<AssetKind>(initialKind);
   const [pending, setPending] = useState<PendingUpload[]>([]);
 
+  const visible = useMemo(
+    () => assets.filter((a) => a.kind === kind),
+    [assets, kind]
+  );
+
   function switchKind(next: string) {
-    const params = new URLSearchParams(searchParams);
-    params.set("kind", next);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    const value = next === "product" ? "product" : "model";
+    setKind(value);
+    window.history.replaceState(null, "", `/library?kind=${value}`);
   }
 
-  const empty = assets.length === 0 && pending.length === 0;
+  const empty = visible.length === 0 && pending.length === 0;
 
   return (
     <div className="space-y-8">
@@ -40,7 +44,7 @@ export function LibraryView({
           </TabsList>
         </Tabs>
         <p className="text-label text-muted-foreground">
-          {assets.length} {assets.length === 1 ? "piece" : "pieces"}
+          {visible.length} {visible.length === 1 ? "piece" : "pieces"}
         </p>
       </div>
 
@@ -75,7 +79,7 @@ export function LibraryView({
               </figcaption>
             </figure>
           ))}
-          {assets.map((asset) => (
+          {visible.map((asset) => (
             <AssetCard key={asset.id} asset={asset} />
           ))}
         </div>

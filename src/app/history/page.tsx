@@ -6,9 +6,10 @@ import {
 } from "@/components/history/history-list";
 import { SiteNav } from "@/components/site-nav";
 import { requireUser } from "@/lib/auth";
+import { getCreditState } from "@/lib/billing/credits";
 import { listTryOnProviders } from "@/lib/providers/tryon";
 import { listVideoProviders } from "@/lib/providers/video";
-import { signPaths } from "@/lib/storage";
+import { stableSignedUrls } from "@/lib/signed-urls";
 
 export const metadata: Metadata = { title: "History" };
 
@@ -16,6 +17,7 @@ const PAGE_SIZE = 60;
 
 export default async function HistoryPage() {
   const { supabase, user } = await requireUser();
+  const creditState = await getCreditState(supabase, user.id);
 
   const [{ data: generations }, { data: videos }, { data: assets }] =
     await Promise.all([
@@ -57,7 +59,7 @@ export default async function HistoryPage() {
       if (src) pathsToSign.push(src.storage_path);
     }
   }
-  const urls = await signPaths(supabase, pathsToSign);
+  const urls = await stableSignedUrls(pathsToSign);
 
   const items: HistoryItem[] = [];
 
@@ -112,7 +114,7 @@ export default async function HistoryPage() {
 
   return (
     <>
-      <SiteNav userEmail={user.email} />
+      <SiteNav userEmail={user.email} credits={creditState.balance} />
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-5 py-12 sm:px-8">
         <header className="mb-10">
           <p className="text-label text-muted-foreground">Every take</p>

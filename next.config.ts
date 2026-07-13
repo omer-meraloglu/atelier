@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // A stray lockfile in $HOME makes Turbopack infer the wrong workspace
+  // root, which breaks client-chunk resolution (pages render but never
+  // hydrate). Pin it explicitly.
+  turbopack: {
+    root: __dirname,
+  },
   images: {
     remotePatterns: [
       // Supabase Storage signed URLs (hosted)

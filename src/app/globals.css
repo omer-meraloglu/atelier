@@ -60,7 +60,7 @@
 
   --ease-editorial: cubic-bezier(0.22, 1, 0.36, 1);
   --animate-reveal: reveal 0.9s var(--ease-editorial) both;
-  --animate-page: page 0.45s var(--ease-editorial) both;
+  --animate-page: page 0.2s var(--ease-editorial) both;
 
   @keyframes reveal {
     from {
@@ -73,14 +73,13 @@
     }
   }
 
+  /* Opacity-only and fast: anything longer reads as lag on every nav. */
   @keyframes page {
     from {
       opacity: 0;
-      transform: translateY(6px);
     }
     to {
       opacity: 1;
-      transform: translateY(0);
     }
   }
 }

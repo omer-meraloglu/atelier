@@ -6,9 +6,10 @@ import type { StudioPhase } from "@/components/studio/result-stage";
 import type { AnimateSource } from "@/components/studio/animate-panel";
 import type { VideoStatus } from "@/app/studio/video-actions";
 import { requireUser } from "@/lib/auth";
+import { getCreditState } from "@/lib/billing/credits";
 import { listTryOnProviders } from "@/lib/providers/tryon";
 import { listVideoProviders } from "@/lib/providers/video";
-import { signPaths } from "@/lib/storage";
+import { stableSignedUrls } from "@/lib/signed-urls";
 
 export const metadata: Metadata = { title: "Studio" };
 
@@ -20,6 +21,7 @@ export default async function StudioPage({
 }: PageProps<"/studio">) {
   const { supabase, user } = await requireUser();
   const params = await searchParams;
+  const creditState = await getCreditState(supabase, user.id);
 
   const { data: assets } = await supabase
     .from("assets")
@@ -27,9 +29,7 @@ export default async function StudioPage({
     .order("created_at", { ascending: false });
 
   const rows = assets ?? [];
-  const urls = await signPaths(
-    supabase,
-    rows.map((a) => a.storage_path)
+  const urls = await stableSignedUrls(rows.map((a) => a.storage_path)
   );
   const withUrls = rows.map((a) => ({
     ...a,
@@ -80,7 +80,7 @@ export default async function StudioPage({
       const paths = [video.result_path, video.poster_path].filter(
         (p): p is string => Boolean(p)
       );
-      const videoUrls = await signPaths(supabase, paths);
+      const videoUrls = await stableSignedUrls(paths);
       initialVideoJob = {
         id: video.id,
         status: video.status,
@@ -114,7 +114,7 @@ export default async function StudioPage({
           .eq("user_id", user.id)
           .single();
         if (sourceGen?.result_path) {
-          const genUrls = await signPaths(supabase, [sourceGen.result_path]);
+          const genUrls = await stableSignedUrls([sourceGen.result_path]);
           initialAnimate = {
             kind: "generation",
             id: video.source_generation_id,
@@ -143,7 +143,7 @@ export default async function StudioPage({
         initialProduct;
 
       if (generation.status === "succeeded" && generation.result_path) {
-        const resultUrls = await signPaths(supabase, [generation.result_path]);
+        const resultUrls = await stableSignedUrls([generation.result_path]);
         const resultUrl = resultUrls.get(generation.result_path);
         if (resultUrl) {
           initialState = {
@@ -160,7 +160,7 @@ export default async function StudioPage({
 
   return (
     <>
-      <SiteNav userEmail={user.email} />
+      <SiteNav userEmail={user.email} credits={creditState.balance} />
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-5 py-12 sm:px-8">
         <header className="mb-10">
           <p className="text-label text-muted-foreground">The fitting room</p>
@@ -179,6 +179,7 @@ export default async function StudioPage({
           initialState={initialState}
           initialAnimate={initialAnimate}
           initialVideoJob={initialVideoJob}
+          videoAllowed={creditState.videoEnabled}
         />
       </main>
     </>

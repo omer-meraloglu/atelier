@@ -20,7 +20,12 @@ export type StudioPhase =
       providerId: string;
       latencyMs?: number;
     }
-  | { phase: "failed"; providerId: string; error: string };
+  | {
+      phase: "failed";
+      providerId: string;
+      error: string;
+      code?: "no-credits";
+    };
 
 function ElapsedSeconds({ since }: { since: number }) {
   const [elapsed, setElapsed] = useState(0);
@@ -130,15 +135,21 @@ export function ResultStage({
             <p className="mt-4 max-w-sm text-sm leading-relaxed">
               {state.error}
             </p>
-            <Button
-              variant="outline"
-              className="mt-8"
-              onClick={() => onGenerate(state.providerId)}
-              disabled={!canGenerate}
-            >
-              <RotateCcw data-icon="inline-start" />
-              Try again
-            </Button>
+            {state.code === "no-credits" ? (
+              <Button className="mt-8" asChild>
+                <a href="/pricing">See plans &amp; top-ups</a>
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                className="mt-8"
+                onClick={() => onGenerate(state.providerId)}
+                disabled={!canGenerate}
+              >
+                <RotateCcw data-icon="inline-start" />
+                Try again
+              </Button>
+            )}
           </motion.div>
         )}
 

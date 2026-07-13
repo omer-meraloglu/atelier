@@ -1,19 +1,19 @@
 "use server";
 
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireUser } from "@/lib/auth";
+import { getCreditState, spendCredits } from "@/lib/billing/credits";
+import { CREDIT_COSTS } from "@/lib/billing/plans";
 import { getFal } from "@/lib/fal";
 import { getVideoProvider } from "@/lib/providers/video";
-import {
-  ASSETS_BUCKET,
-  SIGNED_URL_TTL_PROVIDER,
-  signPath,
-} from "@/lib/storage";
+import { SIGNED_URL_TTL_PROVIDER, signPath } from "@/lib/storage";
+import { stableSignedUrl } from "@/lib/signed-urls";
+import { failVideoRow, tickVideoRow } from "@/lib/video-jobs";
 import type { VideoGenerationRow } from "@/lib/database.types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/database.types";
 
 const startSchema = z.object({
   sourceKind: z.enum(["asset", "generation"]),
@@ -36,27 +36,41 @@ export interface VideoStatus {
 
 /** Stricter guard than images: clips are slow and expensive. */
 const VIDEO_ACTIVE_LIMIT = 2;
-const VIDEO_STUCK_AFTER_MS = 15 * 60 * 1000;
-const MOCK_RENDER_MS = 8_000;
 
-function toStatus(
-  row: VideoGenerationRow,
-  urls?: { resultUrl?: string; posterUrl?: string }
-): VideoStatus {
+async function toStatus(
+  supabase: SupabaseClient<Database>,
+  row: VideoGenerationRow
+): Promise<VideoStatus> {
+  const resultUrl =
+    row.status === "succeeded" && row.result_path
+      ? ((await stableSignedUrl(row.result_path)) ?? undefined)
+      : undefined;
+  const posterUrl = row.poster_path
+    ? ((await stableSignedUrl(row.poster_path)) ?? undefined)
+    : undefined;
   return {
     id: row.id,
     status: row.status,
     providerId: row.provider_model_id,
-    resultUrl: urls?.resultUrl,
-    posterUrl: urls?.posterUrl,
+    resultUrl,
+    posterUrl,
     latencyMs: row.latency_ms ?? undefined,
     error: row.error ?? undefined,
   };
 }
 
+/** Public https origin fal can call back; localhost gets no webhook. */
+function webhookBaseUrl(): string | null {
+  const site = process.env.NEXT_PUBLIC_SITE_URL;
+  if (site && site.startsWith("https://")) {
+    return site.replace(/\/+$/, "");
+  }
+  return null;
+}
+
 export async function startVideoGeneration(
   input: z.infer<typeof startSchema>
-): Promise<VideoStatus | { error: string }> {
+): Promise<VideoStatus | { error: string; code?: "no-credits" | "video-locked" }> {
   const parsed = startSchema.safeParse(input);
   if (!parsed.success) {
     return { error: "Invalid request." };
@@ -69,6 +83,16 @@ export async function startVideoGeneration(
   const provider = getVideoProvider(providerId);
   if (!provider) {
     return { error: "Unknown video model." };
+  }
+
+  // Plan gate: clips are a paid-tier feature; the server refuses no matter
+  // what the UI shows.
+  const creditState = await getCreditState(supabase, user.id);
+  if (!creditState.videoEnabled) {
+    return {
+      error: "Motion is part of the paid plans — upgrade to render clips.",
+      code: "video-locked",
+    };
   }
 
   const { count } = await supabase
@@ -144,14 +168,34 @@ export async function startVideoGeneration(
     return { error: "Could not start the clip." };
   }
 
+  // Meter before the (expensive) submit; failVideoRow refunds on failure.
+  const paid = await spendCredits(
+    supabase,
+    CREDIT_COSTS.video,
+    "video_render",
+    row.id
+  );
+  if (!paid) {
+    await failVideoRow(supabase, row, "Not enough credits for a clip.");
+    revalidatePath("/history");
+    return {
+      error: `A clip costs ${CREDIT_COSTS.video} credits — top up or upgrade to render it.`,
+      code: "no-credits",
+    };
+  }
+
   try {
     let requestId: string;
     if (provider.falEndpoint === "mock") {
       requestId = `mock-${row.id}`;
     } else {
       const fal = getFal();
+      const base = webhookBaseUrl();
       const submitted = await fal.queue.submit(provider.falEndpoint, {
         input: provider.buildInput(videoInput),
+        // Server-side completion: fal calls us back even if every tab is
+        // closed. Polling still runs as the local-dev/mock fallback.
+        ...(base ? { webhookUrl: `${base}/api/fal/webhook` } : {}),
       });
       requestId = submitted.request_id;
     }
@@ -172,24 +216,17 @@ export async function startVideoGeneration(
       .single();
 
     revalidatePath("/history");
-    return toStatus(updated ?? row);
+    return await toStatus(supabase, updated ?? row);
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "The video model rejected the job.";
-    await supabase
-      .from("video_generations")
-      .update({ status: "failed", error: message })
-      .eq("id", row.id)
-      .eq("user_id", user.id);
+    await failVideoRow(supabase, row, message);
     revalidatePath("/history");
     return { error: message };
   }
 }
 
-/**
- * One poll tick. Checks fal's queue, downloads + stores the clip when it
- * completes, and always leaves the row in a truthful state.
- */
+/** One poll tick for a single clip. */
 export async function pollVideoGeneration(input: {
   id: string;
 }): Promise<VideoStatus | { error: string }> {
@@ -207,135 +244,56 @@ export async function pollVideoGeneration(input: {
 
   if (!row) return { error: "Clip not found." };
 
-  if (row.status === "succeeded") {
-    const resultUrl = row.result_path
-      ? ((await signPath(supabase, row.result_path)) ?? undefined)
-      : undefined;
-    const posterUrl = row.poster_path
-      ? ((await signPath(supabase, row.poster_path)) ?? undefined)
-      : undefined;
-    return toStatus(row, { resultUrl, posterUrl });
-  }
-  if (row.status === "failed") {
-    return toStatus(row);
-  }
-
-  const provider = getVideoProvider(row.provider_model_id);
-  const params = (row.params ?? {}) as Record<string, unknown>;
-  const requestId =
-    typeof params.requestId === "string" ? params.requestId : null;
-
-  async function fail(message: string): Promise<VideoStatus> {
-    const { data: failed } = await supabase
-      .from("video_generations")
-      .update({ status: "failed", error: message })
-      .eq("id", row!.id)
-      .eq("user_id", user.id)
-      .select()
-      .single();
+  const before = row.status;
+  const after = await tickVideoRow(supabase, row);
+  if (after.status !== before) {
     revalidatePath("/history");
-    return toStatus(failed ?? row!);
+  }
+  return toStatus(supabase, after);
+}
+
+/** The user's in-flight clips, without touching fal — cheap status read. */
+export async function listActiveVideoJobs(): Promise<VideoStatus[]> {
+  const { supabase, user } = await requireUser();
+  const { data: rows } = await supabase
+    .from("video_generations")
+    .select("*")
+    .eq("user_id", user.id)
+    .in("status", ["queued", "processing"])
+    .order("created_at", { ascending: true });
+
+  return Promise.all((rows ?? []).map((row) => toStatus(supabase, row)));
+}
+
+/**
+ * One poll tick across every in-flight clip the user owns. Called by the
+ * persistent watcher so completion never depends on a particular panel
+ * staying open.
+ */
+export async function pollActiveVideoJobs(): Promise<VideoStatus[]> {
+  const { supabase, user } = await requireUser();
+
+  const { data: rows } = await supabase
+    .from("video_generations")
+    .select("*")
+    .eq("user_id", user.id)
+    .in("status", ["queued", "processing"])
+    .order("created_at", { ascending: true });
+
+  if (!rows || rows.length === 0) return [];
+
+  let anyTransition = false;
+  const results: VideoStatus[] = [];
+  for (const row of rows) {
+    const after = await tickVideoRow(supabase, row);
+    if (after.status !== row.status) anyTransition = true;
+    results.push(await toStatus(supabase, after));
   }
 
-  if (!provider || !requestId) {
-    return await fail("The job reference was lost.");
-  }
-
-  const ageMs = Date.now() - new Date(row.created_at).getTime();
-  if (ageMs > VIDEO_STUCK_AFTER_MS) {
-    return await fail("The render took too long and was abandoned.");
-  }
-
-  try {
-    let videoUrl: string | null = null;
-    let videoBytes: Uint8Array | null = null;
-    let inProgress = false;
-
-    if (provider.falEndpoint === "mock") {
-      if (ageMs < MOCK_RENDER_MS) {
-        inProgress = ageMs > MOCK_RENDER_MS / 3;
-      } else {
-        videoBytes = new Uint8Array(
-          await readFile(path.join(process.cwd(), "dev", "mock-clip.mp4"))
-        );
-      }
-    } else {
-      const fal = getFal();
-      const status = await fal.queue.status(provider.falEndpoint, {
-        requestId,
-        logs: false,
-      });
-
-      if (status.status === "COMPLETED") {
-        const { data } = await fal.queue.result(provider.falEndpoint, {
-          requestId,
-        });
-        videoUrl = provider.parseOutput(data).videoUrl;
-      } else {
-        inProgress = status.status === "IN_PROGRESS";
-      }
-    }
-
-    if (!videoUrl && !videoBytes) {
-      // Still cooking — surface honest state transitions.
-      if (inProgress && row.status === "queued") {
-        const { data: processing } = await supabase
-          .from("video_generations")
-          .update({ status: "processing" })
-          .eq("id", row.id)
-          .eq("user_id", user.id)
-          .select()
-          .single();
-        return toStatus(processing ?? row);
-      }
-      return toStatus(row);
-    }
-
-    if (!videoBytes && videoUrl) {
-      const response = await fetch(videoUrl);
-      if (!response.ok) {
-        return await fail("The provider returned an unreadable video.");
-      }
-      videoBytes = new Uint8Array(await response.arrayBuffer());
-    }
-
-    const resultPath = `${user.id}/videos/${row.id}.mp4`;
-    const { error: uploadError } = await supabase.storage
-      .from(ASSETS_BUCKET)
-      .upload(resultPath, videoBytes!, {
-        contentType: "video/mp4",
-        upsert: true,
-      });
-    if (uploadError) {
-      return await fail("Could not store the clip.");
-    }
-
-    const requestedDuration =
-      typeof params.durationSeconds === "number"
-        ? params.durationSeconds
-        : null;
-
-    const { data: succeeded } = await supabase
-      .from("video_generations")
-      .update({
-        status: "succeeded",
-        result_path: resultPath,
-        latency_ms: ageMs,
-        duration_s: requestedDuration,
-      })
-      .eq("id", row.id)
-      .eq("user_id", user.id)
-      .select()
-      .single();
-
-    const resultUrl = (await signPath(supabase, resultPath)) ?? undefined;
+  if (anyTransition) {
     revalidatePath("/history");
-    return toStatus(succeeded ?? row, { resultUrl });
-  } catch (err) {
-    return await fail(
-      err instanceof Error ? err.message : "Polling the render failed."
-    );
   }
+  return results;
 }
 
 /** Records the browser-captured poster frame for a finished clip. */

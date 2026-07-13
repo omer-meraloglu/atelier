@@ -33,7 +33,7 @@ export default function Home() {
             <Link href="/studio">Enter the studio</Link>
           </Button>
           <Button size="lg" variant="outline" asChild>
-            <Link href="/library">Browse library</Link>
+            <Link href="/pricing">See pricing</Link>
           </Button>
         </div>
       </div>
@@ -43,12 +43,20 @@ export default function Home() {
           <span className="text-label text-muted-foreground">
             Atelier © {new Date().getFullYear()}
           </span>
-          <Link
-            href="/style"
-            className="text-label text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Design system
-          </Link>
+          <span className="flex items-center gap-6">
+            <Link
+              href="/pricing"
+              className="text-label text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Pricing
+            </Link>
+            <Link
+              href="/style"
+              className="text-label text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Design system
+            </Link>
+          </span>
         </div>
       </footer>
     </main>

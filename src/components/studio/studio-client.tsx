@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { generateTryOn, saveGenerationToLibrary } from "@/app/studio/actions";
@@ -42,6 +43,7 @@ export function StudioClient({
   initialState,
   initialAnimate,
   initialVideoJob,
+  videoAllowed = true,
 }: {
   userId: string;
   models: AssetWithUrl[];
@@ -53,7 +55,9 @@ export function StudioClient({
   initialState?: StudioPhase;
   initialAnimate?: AnimateSource;
   initialVideoJob?: VideoStatus;
+  videoAllowed?: boolean;
 }) {
+  const router = useRouter();
   const [model, setModel] = useState<AssetWithUrl | null>(initialModel);
   const [product, setProduct] = useState<AssetWithUrl | null>(initialProduct);
   const [providerId, setProviderId] = useState(providers[0]?.id ?? "");
@@ -99,8 +103,10 @@ export function StudioClient({
         phase: "failed",
         providerId: result.providerId,
         error: result.error ?? "The render failed.",
+        code: result.code,
       });
     }
+    router.refresh(); // keep the nav credit chip honest
   }
 
   function handleSave(generationId: string) {
@@ -228,6 +234,7 @@ export function StudioClient({
         providers={videoProviders}
         userId={userId}
         initialJob={initialVideoJob}
+        videoAllowed={videoAllowed}
       />
     </div>
   );

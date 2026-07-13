@@ -1,0 +1,53 @@
+<html>
+  <body
+    style="
+      margin: 0;
+      padding: 48px 24px;
+      background: #f2efe9;
+      color: #191712;
+      font-family: Georgia, 'Times New Roman', serif;
+    "
+  >
+    <div style="max-width: 480px; margin: 0 auto">
+      <p style="font-size: 28px; letter-spacing: -0.02em; margin: 0">Atelier</p>
+      <p
+        style="
+          margin: 32px 0 0;
+          font-family: Helvetica, Arial, sans-serif;
+          font-size: 14px;
+          line-height: 1.6;
+          color: #4c473f;
+        "
+      >
+        Welcome. Confirm your email address to open your studio.
+      </p>
+      <p style="margin: 32px 0 0">
+        <a
+          href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email"
+          style="
+            display: inline-block;
+            background: #191712;
+            color: #f2efe9;
+            padding: 14px 32px;
+            font-family: Helvetica, Arial, sans-serif;
+            font-size: 11px;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            text-decoration: none;
+          "
+          >Confirm my account</a
+        >
+      </p>
+      <p
+        style="
+          margin: 40px 0 0;
+          font-family: Helvetica, Arial, sans-serif;
+          font-size: 12px;
+          color: #8a847a;
+        "
+      >
+        If you didn't create an account, you can ignore this email.
+      </p>
+    </div>
+  </body>
+</html>

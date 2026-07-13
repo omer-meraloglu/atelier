@@ -86,3 +86,81 @@ A running log, newest last.
 - **"Save to library" copies the render** into a new storage object and
   registers it as a *model* asset — so a finished look can be layered with
   the next garment. Copy (not reference) keeps deletes independent.
+
+## V2 — bug fixes
+
+- **Video completion is server-driven now.** Root cause confirmed by repro:
+  the only finalizer was the Animate panel's poll loop, so closing the Sheet
+  or navigating orphaned jobs (a clip sat `queued` forever). Fixes, layered:
+  (1) `fal.queue.submit` gets a `webhookUrl` (`/api/fal/webhook`, ED25519
+  verification against fal's JWKS per their spec) whenever
+  `NEXT_PUBLIC_SITE_URL` is https — fal finalizes clips with zero clients
+  attached; (2) a `VideoJobsWatcher` mounted in the site nav is the single
+  client-side poller across all pages (panel just listens to its broadcasts),
+  covering local dev and the mock provider; (3) shared tick/finalize logic in
+  `src/lib/video-jobs.ts` used by action, watcher and webhook alike.
+  Verified: clip started, panel closed + navigated away in <1s → completed at
+  34s with toast; a stranded pre-fix job recovered on next page load.
+- **Library tabs are client-state.** One query fetches both kinds; the
+  Models/Products toggle filters locally and syncs `?kind=` via
+  `history.replaceState` — no server round-trip, deep links intact.
+- **Signed URLs are cached server-side** (`src/lib/signed-urls.ts`,
+  `unstable_cache`, 45-min TTL under the 60-min signature). Re-signing per
+  request had made every image URL unique per page view, defeating both the
+  browser cache and the next/image optimizer. Trade-offs: signing uses the
+  admin client (cache can't touch cookies) but only for paths already
+  RLS-fetched by the caller; a URL served near the cache window's end still
+  has ≥15 min of signature left. Optimizer caching shows only in production
+  (dev always serves `max-age=0`) — verified URL identity across visits in
+  dev instead. Provider-bound URLs stay short-lived and uncached.
+- **Page transition trimmed to a 200ms opacity fade** — the 450ms
+  slide-and-fade read as lag on every navigation.
+- **`turbopack.root` pinned** — a stray `~/package-lock.json` made Turbopack
+  infer the wrong workspace root. Also: a corrupted `.next` dev cache caused
+  silent non-hydration ("Cannot find module 'sonner'" in SSR chunks);
+  `rm -rf .next && pnpm install` clears it.
+
+## V2 — auth
+
+- **Password auth added alongside magic link and Google**, not replacing
+  them. One sign-in form dispatches three intents (password / magic link /
+  reset) so the typed email serves all three buttons.
+- Signup requires email confirmation (enabled locally too, matching prod);
+  the confirmation and recovery emails ship as styled templates. The
+  recovery link chains `/auth/confirm?type=recovery&next=/auth/update-password`
+  → recovery session → new-password form.
+- Password resets answer identically whether or not the account exists
+  (anti-enumeration); signups against an existing email surface a friendly
+  "sign in instead" (Supabase's empty-identities quirk handled).
+
+## V2 — billing
+
+- **Paddle as the real provider** (Merchant of Record; Stripe doesn't
+  onboard Turkey-based merchants, PayPal doesn't operate there). Built
+  behind a `BillingProvider` adapter (`src/lib/billing/provider.ts`)
+  mirroring the fal registry pattern; iyzico/PayTR for TRY-local sales is a
+  future adapter, not a blocker. Prices in USD; the MoR handles VAT/KDV.
+- **Mock billing provider** (`ENABLE_MOCK_PROVIDER=1`): checkout is a local
+  confirm page whose completion applies the *same* normalized events as the
+  webhook (`applyBillingEvent`), so subscribe → grant → spend → refund runs
+  offline.
+- **Credits: append-only ledger, balance = sum(delta).** Spending happens in
+  a `security definer` Postgres function (`spend_credits`) that advisory-locks
+  the user, checks the balance and inserts the debit atomically; it reads
+  `auth.uid()` so a caller can only spend their own credits. Grants/refunds
+  are service-role-only.
+- **Idempotency by constraint, not by care**: `billing_events` PK absorbs
+  webhook replays; partial unique indexes make the signup grant
+  once-per-user and refunds/grants once-per-reference — the watcher, webhook
+  and a poll tick can all fail the same clip and compensation still lands
+  exactly once.
+- **Pricing** (tunable in `src/lib/billing/plans.ts`): Free = 10 signup
+  credits, stills only. Starter $9 → 200/mo + video. Studio $29 → 1,000/mo.
+  Packs: 100/$6, 500/$25. Costs: still = 1, clip = 20 (≈ fal's image:video
+  cost ratio). Renewal grants ride `transaction.completed`
+  (`origin=subscription_recurring`); canceling stops grants but banked
+  credits remain.
+- Spend happens **before** the fal submit; every failure path refunds via
+  `refundSpentCredits` (looks up the actual debit, compensates once).
+  The video plan-gate and all metering live in the server actions — the UI
+  CTAs are a courtesy, not the enforcement.

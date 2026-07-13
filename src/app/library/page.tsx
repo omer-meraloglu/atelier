@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import { LibraryView } from "@/components/library/library-view";
 import { SiteNav } from "@/components/site-nav";
 import { requireUser } from "@/lib/auth";
-import { signPaths } from "@/lib/storage";
+import { getCreditState } from "@/lib/billing/credits";
+import { stableSignedUrls } from "@/lib/signed-urls";
 import type { AssetKind } from "@/lib/database.types";
 
 export const metadata: Metadata = { title: "Library" };
@@ -12,19 +13,20 @@ export default async function LibraryPage({
   searchParams,
 }: PageProps<"/library">) {
   const { supabase, user } = await requireUser();
+  const creditState = await getCreditState(supabase, user.id);
   const params = await searchParams;
   const kind: AssetKind = params.kind === "product" ? "product" : "model";
 
+  // Both kinds in one query: tab switching filters client-side, so the
+  // Models/Products toggle reacts instantly instead of waiting on a
+  // server round-trip.
   const { data: assets } = await supabase
     .from("assets")
     .select("*")
-    .eq("kind", kind)
     .order("created_at", { ascending: false });
 
   const rows = assets ?? [];
-  const urls = await signPaths(
-    supabase,
-    rows.map((a) => a.storage_path)
+  const urls = await stableSignedUrls(rows.map((a) => a.storage_path)
   );
 
   const withUrls = rows.map((a) => ({
@@ -34,7 +36,7 @@ export default async function LibraryPage({
 
   return (
     <>
-      <SiteNav userEmail={user.email} />
+      <SiteNav userEmail={user.email} credits={creditState.balance} />
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-5 py-12 sm:px-8">
         <header className="mb-10">
           <p className="text-label text-muted-foreground">Your collection</p>
@@ -42,7 +44,7 @@ export default async function LibraryPage({
             Library
           </h1>
         </header>
-        <LibraryView assets={withUrls} kind={kind} userId={user.id} />
+        <LibraryView assets={withUrls} initialKind={kind} userId={user.id} />
       </main>
     </>
   );

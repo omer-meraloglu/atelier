@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { signOut } from "@/app/login/actions";
+import { VideoJobsWatcher } from "@/components/video-jobs-watcher";
 import { cn } from "@/lib/utils";
 
 const links = [
@@ -14,15 +15,18 @@ const links = [
 
 export function SiteNav({
   userEmail,
+  credits,
   actions,
 }: {
   userEmail?: string;
+  credits?: number;
   actions?: React.ReactNode;
 }) {
   const pathname = usePathname();
 
   return (
     <header className="sticky top-0 z-50 border-b hairline bg-background/85 backdrop-blur-sm">
+      <VideoJobsWatcher />
       <div className="mx-auto flex h-14 max-w-[1600px] items-center justify-between gap-6 px-5 sm:h-16 sm:px-8">
         <Link
           href="/"
@@ -54,6 +58,15 @@ export function SiteNav({
 
         <div className="flex items-center gap-4">
           {actions}
+          {typeof credits === "number" && (
+            <Link
+              href="/account"
+              className="text-label border hairline px-2.5 py-1.5 tabular-nums transition-colors duration-300 hover:border-ink"
+              title="Credits — manage your plan"
+            >
+              {credits} cr
+            </Link>
+          )}
           {userEmail && (
             <>
               <span
